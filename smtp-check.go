@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"net"
+	"crypto/tls"
 	"net/smtp"
 	"os"
 	"time"
@@ -26,21 +27,21 @@ func enum_users() bool{
 
 // Funciones de chequeo de cifrado disponibles
 
-func check_STARTTLS(port int) bool{ //Función finalizada OK!
+func check_STARTTLS(server string, port int) bool{ //Función finalizada OK!
 
-	var msgOK = "TLS OK on port " + strconv.Itoa(port) + " !!! :-)"
-	var msgNotOK = "TLS NOT FOUND on port " + strconv.Itoa(port) + " !!! :-("
+	var msgOK = "STARTTLS OK on port " + strconv.Itoa(port) + " !!! :-)"
+	var msgNotOK = "STARTTLS NOT FOUND on port " + strconv.Itoa(port) + " !!! :-("
 	var msgERRORconn = "Error during connection on port " + strconv.Itoa(port) + " !!! :-S"
 
-	fmt.Print("Testing TLS on PORT " + strconv.Itoa(port) + ": ")
+	fmt.Print("Testing STARTTLS on PORT " + strconv.Itoa(port) + ": ")
 
-	conn, err := net.DialTimeout("tcp", SMTP_SERVER + ":" + strconv.Itoa(port), 4*time.Second)
+	conn, err := net.DialTimeout("tcp", server + ":" + strconv.Itoa(port), 10*time.Second)
 	if err != nil {
 		color.Yellow(msgERRORconn)
 		return false
 	}
 
-	c, err := smtp.NewClient( conn, SMTP_SERVER + ":" + strconv.Itoa(port) )
+	c, err := smtp.NewClient( conn, server + ":" + strconv.Itoa(port) )
 	if err != nil {
 		//log.Fatal(err)
 		color.Yellow(msgERRORconn)
@@ -57,6 +58,67 @@ func check_STARTTLS(port int) bool{ //Función finalizada OK!
 		return tlsState
 	}
 	
+}
+
+func check_TLS(server string, port int) bool{ //Función finalizada OK!
+
+	var msgOK = "OK on port " + strconv.Itoa(port) + " !!! :-)"
+	var msgNotOK = "NOT FOUND on port " + strconv.Itoa(port) + " !!! :-("
+	var msgERRORconn = "Error during connection on port " + strconv.Itoa(port) + " !!! :-S"
+
+	/* 
+
+	En esta zona (al abrir el Dial TLS/SSL) hay que forzar las versiones máximas de SSL admitidas para poder comprobar los servicios con:
+	- SSLv3
+	- TLSv1.0
+	- TLSv1.1
+	- TLSv1.2
+
+	*/
+
+	ok := false
+
+	for version, go_lib := range (map[string]uint16{
+		"SSLv3": tls.VersionSSL30 , 
+		"TLSv1.0": tls.VersionTLS10, 
+		"TLSv1.1" : tls.VersionTLS11, 
+		"TLSv1.2" : tls.VersionTLS12 }) {
+		
+		fmt.Print("Testing " + version + " on PORT "+strconv.Itoa(port)+": ")
+
+		dialer_timeout := &net.Dialer{
+			Timeout: 10*time.Second,
+		}
+
+		tls_config := &tls.Config{
+			MaxVersion: go_lib,
+			MinVersion: go_lib,
+		}
+
+
+		conn, err := tls.DialWithDialer(dialer_timeout , "tcp", server+":"+ strconv.Itoa(port), tls_config)
+		if err != nil {
+			color.Yellow(msgERRORconn + " | "+ err.Error())
+			//color.Yellow("error en Dial With Dialer")
+			continue
+		}
+
+		c,err := smtp.NewClient(conn, server+":" +strconv.Itoa(port))
+		if err != nil {
+			color.Red(msgNotOK)
+			continue
+		}
+		c.Close()
+		if version == "SSLv3" {
+			color.Red("Santo cielo!!! Desactiva SSLv3 por favor...")
+		} else {
+			color.Green(msgOK)
+			ok = true
+		}
+
+	}
+
+	return ok
 }
 
 
@@ -120,7 +182,7 @@ func checkSPFregisters(domainName string) bool{
 
 // Declaración de las principales variables usadas
 var PORT_SMTP int = 25
-//var PORT_SMTP_SSL int = 465
+var PORT_SMTP_SSL int = 465
 var PORT_SMTP_TLS int = 587
 
 //var DICT_USERS string = "/usr/share/wordlist/smtp_users.dic"
@@ -132,7 +194,7 @@ var PORT_SMTP_TLS int = 587
 
 // Variables para pruebas de desarrollo
 
-var SMTP_SERVER string = "alt4.gmail-smtp-in.l.google.com"
+var SMTP_SERVER string = "estafeta5.prosegur.com"
 //var SMTP_SERVER string = "localhost"
 //------------------------------------------------------------------
 
@@ -142,8 +204,14 @@ func main() {
 
 	//fmt.Println(isDomainName(SMTP_SERVER))
 	fmt.Println("CHECKING TLS:")
-	check_STARTTLS(PORT_SMTP)
-	check_STARTTLS(PORT_SMTP_TLS)
+	check_TLS(SMTP_SERVER, PORT_SMTP_SSL)
+	check_TLS(SMTP_SERVER, PORT_SMTP_TLS)
+	check_TLS(SMTP_SERVER, PORT_SMTP)
+	fmt.Print("\n\n")
+	fmt.Println("CHECKING STARTTLS:")
+	check_STARTTLS(SMTP_SERVER, PORT_SMTP)
+	check_STARTTLS(SMTP_SERVER, PORT_SMTP_TLS)
+	
 	fmt.Println("\n-----------------------------------\n")
 
 	fmt.Println("Fin de ejecución!!!")
